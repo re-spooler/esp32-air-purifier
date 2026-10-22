@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>风扇控制 · Web 蓝牙</title>
+
+<style>
+  :root{
+    --page:#070b12;
+    --panel:#0f1726;
+    --panel2:#131d2f;
+    --line:#1e2a3d;
+    --txt:#e8eefc;
+    --dim:#6c7a91;
+    --dim2:#8fa3bf;
+    --accent:#2f6bff;
+    --accent2:#4cc2ff;
+    --ok:#35d07f;
+    --warn:#ffb020;
+    --err:#ff5a5f;
+    --r:18px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%}
+  body{
+    margin:0;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    background:
+      radial-gradient(900px 500px at 78% -12%, rgba(47,107,255,.20), transparent 62%),
+      radial-gradient(700px 460px at 6% 108%, rgba(76,194,255,.10), transparent 60%),
+      var(--page);
+    color:var(--txt);
+    display:flex;align-items:center;justify-content:center;
+    padding:22px 16px;
+  }
+  .app{width:100%;max-width:760px}
+
+  /* ---------- 顶部 ---------- */
+  header{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+  .brand{display:flex;align-items:center;gap:10px;flex:1;min-width:220px}
+  .dot{width:9px;height:9px;border-radius:50%;background:#39435a;transition:.25s;flex:none}
+  .dot.on{background:var(--ok);box-shadow:0 0 0 4px rgba(53,208,127,.16),0 0 12px rgba(53,208,127,.7)}
+  .dot.wait{background:var(--warn);animation:pulse 1s infinite}
+  @keyframes pulse{50%{opacity:.35}}
+  .brand h1{font-size:17px;margin:0;font-weight:600;letter-spacing:.5px}
+  .brand .sub{font-size:12px;color:var(--dim);font-weight:400}
+
+  .btn-conn{
+    border:0;border-radius:11px;padding:11px 18px;font-size:13.5px;font-weight:600;
+    color:#fff;background:linear-gradient(180deg,#3b78ff,#2a5fe0);cursor:pointer;
+    box-shadow:0 6px 18px -6px rgba(47,107,255,.85);transition:.18s;
+  }
+  .btn-conn:hover{filter:brightness(1.07)}
+  .btn-conn:active{transform:translateY(1px)}
+  .btn-conn.ghost{background:transparent;border:1px solid var(--line);color:var(--dim2);box-shadow:none}
+  .btn-conn:disabled{opacity:.5;cursor:default}
+
+  /* ---------- 主面板 ---------- */
+  main{display:grid;grid-template-columns:1.55fr 1fr;gap:14px}
+  @media (max-width:680px){main{grid-template-columns:1fr}}
+
+  .panel{
+    background:linear-gradient(180deg,rgba(23,34,54,.92),rgba(13,20,33,.96));
+    border:1px solid var(--line);border-radius:var(--r);
+    padding:18px;position:relative;overflow:hidden;
+  }
+  .panel::before{
+    content:"";position:absolute;inset:0;border-radius:var(--r);pointer-events:none;
+    background:linear-gradient(180deg,rgba(255,255,255,.05),transparent 42%);
+  }
+
+  .pwr{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+  .pwr span{font-size:12.5px;color:var(--dim);letter-spacing:1px}
+  .switch{
+    display:flex;align-items:center;gap:9px;padding:5px 12px 5px 5px;
+    border-radius:999px;border:1px solid #26324a;background:#141d2c;cursor:pointer;
+    color:var(--dim2);font-size:12.5px;font-weight:600;transition:.22s;
+  }
+  .switch i{
+    width:38px;height:22px;border-radius:999px;background:#2a3550;position:relative;transition:.22s;flex:none;
+  }
+  .switch i::after{
+    content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;
+    background:#8b9bb5;transition:.22s;
+  }
+  .switch[aria-pressed="true"]{background:rgba(47,107,255,.14);border-color:rgba(47,107,255,.55);color:#cfe0ff}
+  .switch[aria-pressed="true"] i{background:var(--accent)}
+  .switch[aria-pressed="true"] i::after{left:19px;background:#fff}
+  .switch b{font-weight:600}
+
+  .gauges{display:flex;align-items:flex-end;gap:16px}
+  .lvl{display:flex;align-items:baseline;gap:6px;line-height:.86}
+  .lvl #bigLvl{
+    font-size:88px;font-weight:700;letter-spacing:-3px;
+    background:linear-gradient(180deg,#8fd0ff,#2f6bff);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    font-variant-numeric:tabular-nums;
+  }
+  .lvl em{font-style:normal;font-size:15px;color:var(--dim2)}
+  .right{flex:1;padding-bottom:10px;min-width:0}
+  .pct{display:flex;align-items:baseline;gap:2px;margin-bottom:10px}
+  .pct #pct{font-size:30px;font-weight:600;color:var(--accent2);font-variant-numeric:tabular-nums;line-height:1}
+  .pct small{font-size:14px;color:var(--dim)}
+
+  .bar{height:12px;border-radius:999px;background:#1b2433;overflow:hidden;border:1px solid #1d2739}
+  .fill{
+    height:100%;width:33%;border-radius:999px;
+    background:linear-gradient(90deg,#2f6bff,#4cc2ff);
+    transition:width .28s cubic-bezier(.4,0,.2,1);
+    box-shadow:0 0 12px rgba(76,194,255,.4);
+  }
+
+  .btns{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:16px}
+  .btns button{
+    padding:14px 0;border-radius:13px;cursor:pointer;font-size:14.5px;font-weight:600;
+    color:#a9bad4;background:#151f30;border:1px solid #24314a;transition:.16s;
+  }
+  .btns button:hover{background:#1a2740;color:#dce8ff}
+  .btns button:active{transform:translateY(1px)}
+  .btns button.active{
+    color:#fff;border-color:transparent;
+    background:linear-gradient(180deg,#3b78ff,#2757cf);
+    box-shadow:0 8px 22px -10px rgba(47,107,255,.95);
+  }
+
+  /* ---------- 侧栏日志 ---------- */
+  .side{display:flex;flex-direction:column;gap:10px;min-height:0}
+  .side h2{font-size:12px;color:var(--dim);margin:0;font-weight:500;letter-spacing:1.2px}
+  .log{
+    flex:1;min-height:150px;max-height:236px;overflow:auto;
+    background:rgba(10,16,27,.75);border:1px solid var(--line);border-radius:var(--r);
+    padding:11px 12px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;line-height:1.75;
+  }
+  .log div{color:var(--dim2);word-break:break-all}
+  .log .t{color:#4a5871;margin-right:6px}
+  .log .tx{color:#7fb2ff}
+  .log .rx{color:#69d69a}
+  .log .er{color:var(--err)}
+  .hint{
+    font-size:11.5px;color:var(--dim);line-height:1.65;
+    border:1px dashed #24314a;border-radius:12px;padding:9px 11px;background:rgba(255,176,32,.04);
+  }
+  .hint b{color:var(--warn);font-weight:600}
+  .hint code{color:var(--accent2);font-size:11px}
+
+  .off .panel{opacity:.55;filter:saturate(.6)}
+  .off .btns button,.off .switch{pointer-events:none}
+
+  .toast{
+    position:fixed;left:50%;bottom:26px;transform:translate(-50%,16px);
+    background:#1a2740;border:1px solid #2c3c58;color:#dbe7ff;
+    padding:10px 16px;border-radius:11px;font-size:13px;opacity:0;pointer-events:none;transition:.25s;
+    box-shadow:0 12px 30px -12px #000;z-index:9;max-width:86vw;text-align:center;
+  }
+  .toast.show{opacity:1;transform:translate(-50%,0)}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <header>
+    <div class="brand">
+      <span class="dot" id="dot"></span>
+      <h1>风扇控制</h1>
+      <span class="sub" id="devName">未连接</span>
+    </div>
+    <button class="btn-conn" id="connBtn">连接蓝牙</button>
+  </header>
+
+  <main>
+    <section class="panel">
+      <div class="pwr">
+        <span>电源</span>
+        <button class="switch" id="pwrBtn" aria-pressed="true"><i></i><b>开</b></button>
+      </div>
+
+      <div class="gauges">
+        <div class="lvl"><span id="bigLvl">1</span><em>档</em></div>
+        <div class="right">
+          <div class="pct"><span id="pct">33</span><small>%</small></div>
+          <div class="bar"><div class="fill" id="fill"></div></div>
+        </div>
+      </div>
+
+      <div class="btns">
+        <button data-lv="1" class="active">低 档</button>
+        <button data-lv="2">中 档</button>
+        <button data-lv="3">高 档</button>
+      </div>
+    </section>
+
+    <aside class="side">
+      <h2>通信日志</h2>
+      <div class="log" id="log"></div>
+      <div class="hint" id="hint"></div>
+    </aside>
+  </main>
+</div>
+<div class="toast" id="toast"></div>
+<script src="control.js" defer></script>
+</body>
+</html>
