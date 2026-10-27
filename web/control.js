@@ -18,8 +18,8 @@
   const fanEl = $("fan");
   const fwVer = $("fwVer"), otaBtn = $("otaBtn");
   const otaLatestEl = $("otaLatest"), otaLatestVerEl = $("otaLatestVer");
-  const otaMask = $("otaMask"), otaBarFill = $("otaBarFill"), otaPctTxt = $("otaPctTxt");
-  const otaCardVer = $("otaCardVer"), otaCardNote = $("otaCardNote");
+  const otaLine = $("otaLine"), otaBarFill = $("otaBarFill"), otaPctTxt = $("otaPctTxt");
+  const otaStateTxt = $("otaStateTxt");
   const wifiBtn = $("wifiBtn"), wifiModal = $("wifiModal");
   const wifiStat = $("wifiStat"), wifiStatTxt = $("wifiStatTxt");
   const wifiSsidEl = $("wifiSsid"), wifiPassEl = $("wifiPass");
@@ -114,7 +114,7 @@
   }
 
   function renderOta() {
-    renderOtaOverlay();
+    renderOtaInline();
     if (!otaBtn) return;
     const busy = otaPhase === "webcheck" || otaPhase === "progress";
     otaBtn.disabled = !connected || busy;
@@ -126,17 +126,21 @@
     else otaBtn.textContent = t("otaCheck");
   }
 
-  // 升级进度浮层：设备每 2% 推一次，这里同步进度条/百分比
-  function renderOtaOverlay() {
-    if (!otaMask) return;
+  // 升级进度直接显示在页面里（不用弹窗）：进度条 + 百分比 + 状态文字
+  function renderOtaInline() {
+    if (!otaLine) return;
     const show = otaPhase === "progress" && connected;
-    otaMask.classList.toggle("show", show);
+    otaLine.classList.toggle("show", show);
     if (!show) return;
-    const p = Math.max(0, Math.min(100, otaPct));
-    if (otaBarFill) otaBarFill.style.width = p + "%";
-    if (otaPctTxt) otaPctTxt.textContent = p + "%";
-    if (otaCardVer) otaCardVer.textContent = otaRemoteVer ? "v" + otaRemoteVer : "";
-    if (otaCardNote) otaCardNote.textContent = otaSawEvent ? t("otaKeepOn") : t("otaWaitDev");
+    const got = otaSawEvent;                       // 有没有收到设备推的进度
+    otaLine.classList.toggle("wait", !got);        // 没收到就显示呼吸条，别让人以为卡死
+    otaBarFill.style.width = got ? Math.max(0, Math.min(100, otaPct)) + "%" : "";
+    otaPctTxt.textContent = got ? Math.max(0, Math.min(100, otaPct)) + "%" : "--";
+    if (otaStateTxt) {
+      otaStateTxt.textContent = got
+        ? (otaPct >= 100 ? t("otaWriting") : t("otaUpdating"))
+        : t("otaWaitDev");
+    }
   }
 
   // 网页端版本检查：浏览器直接拉 VERSON.txt
@@ -184,34 +188,40 @@
       otaSawEvent = false;
       renderOta();
       send("FLASH");
-      // 看门狗：旧固件不认识 FLASH 会把命令丢掉（连失败提示都没有）。
-      // 4.5 秒内没收到任何 OTA 事件，就退回老命令 OTA 让设备自己查+下。
-      stopOtaAck();
+      stopOtaTimers();
+      // 兜底：4.5 秒内一声不吭，可能是旧固件不认识 FLASH，补发老命令 OTA 让它自查自升。
+      // 注意这里只补发命令，不改 UI 状态——设备可能只是通知没送到手机。
       otaAckTimer = setTimeout(() => {
         if (otaSawEvent) return;
         toast(t("otaLegacy"));
         send("OTA");
-        otaAckTimer = setTimeout(() => {
-          if (otaSawEvent) return;
-          otaPhase = "idle"; renderOta();
-          toast(t("otaDevSilent"));
-        }, 8000);
       }, 4500);
+      // 安全阀：3 分钟还没结果才复位，中途绝不关进度条
+      otaSafeTimer = setTimeout(() => {
+        if (otaPhase !== "progress") return;
+        otaPhase = "idle"; renderOta();
+        toast(t("otaNoProgress"));
+      }, 180000);
       return;
     }
     if (otaPhase === "idle") webOtaCheck();
   }
 
   // 设备侧事件（FLASH 下载中 / 兜底 OTA 路径共用）
-  let otaAckTimer = 0;      // 发 FLASH 后等设备回应的看门狗
+  let otaAckTimer = 0;      // 发 FLASH 后等设备第一声回应的看门狗（只用于兜底发 OTA）
+  let otaSafeTimer = 0;     // 安全阀：3 分钟还没结束才复位，绝不中途关掉进度条
   let otaSawEvent = false;  // 本轮是否已收到设备的 OTA 事件
 
   function stopOtaAck() { clearTimeout(otaAckTimer); otaAckTimer = 0; }
+  function stopOtaTimers() { stopOtaAck(); clearTimeout(otaSafeTimer); otaSafeTimer = 0; }
 
   function handleOtaEvent(s) {
     otaSawEvent = true;
-    stopOtaAck();
+    stopOtaAck();                 // 收到任何回应就不必再补发 OTA 了；安全阀保留
     switch (s.ota) {
+      case "start":                        // 设备已开始下载（新版固件会先发这条）
+        otaPhase = "progress"; otaPct = 0; renderOta();
+        break;
       case "checking":                     // 设备自查路径（兜底）
         otaPhase = "webcheck"; renderOta(); toast(t("otaChecking"));
         break;
@@ -222,13 +232,16 @@
         otaPhase = "progress"; otaPct = s.p | 0; renderOta();
         break;
       case "uptodate":
-        otaPhase = "idle"; renderOta(); toast(t("otaUptodate"));
+        stopOtaTimers(); otaPhase = "idle"; renderOta(); toast(t("otaUptodate"));
         break;
       case "ok":
-        otaPhase = "idle"; renderOta(); toast(t("otaOk"));
+        stopOtaTimers();
+        otaPct = 100; otaPhase = "progress"; renderOta();   // 先让进度条走满
+        setTimeout(() => { otaPhase = "idle"; renderOta(); }, 1500);
+        toast(t("otaOk"));
         break;
       case "fail":
-        otaPhase = "idle"; renderOta();
+        stopOtaTimers(); otaPhase = "idle"; renderOta();
         toast(t("otaFail") + (s.msg ? " (" + s.msg + ")" : ""));
         break;
     }
@@ -562,7 +575,7 @@
       const wasOta = otaPhase === "progress";
       otaPhase = "idle";
       deviceFw = "";
-      stopOtaAck();
+      stopOtaTimers();
       if (otaLatestEl) otaLatestEl.style.display = "none";
       if (fwVer) fwVer.textContent = "--";
       // 升级过程中断线 = 设备刷完重启了，提示一下（不是故障）
@@ -734,6 +747,7 @@
       closePicker();
       log(t("connectedLog") + nm);
       send("S");
+      armFwRetry();
     } catch (e) {
       log(t("connectFailed") + (e.message || e), "er");
       toast(t("connectFailed") + (e.message || e));
@@ -751,9 +765,24 @@
     onGattDisconnected();
   }
 
+  // 版本号随状态 JSON 一起回。连接瞬间通知最密（订阅推送 + S 应答挤在一起），
+  // 首帧偶发被挤丢就只剩 5 秒心跳能救——这里主动补问，1.5s 一次最多 5 次，
+  // 拿到 fw（或断线）就停。
+  let fwTimer = 0;
+  function stopFwRetry() { if (fwTimer) { clearInterval(fwTimer); fwTimer = 0; } }
+  function armFwRetry() {
+    stopFwRetry();
+    let tries = 0;
+    fwTimer = setInterval(() => {
+      if (!connected || deviceFw || tries++ >= 5) { stopFwRetry(); return; }
+      send("S");
+    }, 1500);
+  }
+
   function onGattDisconnected() {
     rxChar = null; txChar = null; server = null;
     rxBuf = "";
+    stopFwRetry();
     try { rxDec.decode(); } catch (e) {}   // 清掉流式解码器里残留的半个字符
     setConnected(false);
     log(t("disconnectedLog"));
@@ -801,6 +830,7 @@
     if (typeof s.fw === "string" && fwVer) {
       fwVer.textContent = s.fw;          // 固件版本
       deviceFw = s.fw;
+      stopFwRetry();                     // 拿到版本号，不用再补问了
     }
     if (s.ota) handleOtaEvent(s);                                     // OTA 进度/结果
     if (s.wifi) onWifiState(s.wifi);                                  // WiFi 状态
