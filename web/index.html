@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title data-i18n="title">空气净化器控制 · Web 蓝牙</title>
+<link href="style.css" rel="stylesheet" />
+</head>
+<body>
+<div class="app" id="app">
+  <header>
+    <div class="brand">
+      <span class="dot" id="dot"></span>
+      <h1 data-i18n="appTitle">空气净化器控制</h1>
+      <span class="sub" id="devName" data-i18n="notConnected">未连接</span>
+    </div>
+    <button class="btn-conn ghost" id="langBtn">EN</button>
+    <button class="btn-conn ghost" id="switchBtn" style="display:none" data-i18n="switchDevice">换设备</button>
+    <button class="btn-conn ghost" id="wifiBtn" data-i18n="wifiBtn" data-i18n-title="wifiTitle" title="WiFi 设置">WiFi</button>
+    <button class="btn-conn" id="connBtn" data-i18n="connect">连接蓝牙</button>
+  </header>
+
+  <main>
+    <section class="panel">
+      <div class="pwr">
+        <span data-i18n="power">电源</span>
+        <button class="switch" id="pwrBtn" aria-pressed="true"><i></i><b>开</b></button>
+      </div>
+
+      <div class="gauges">
+        <div class="lvl"><span id="bigLvl">1</span><em data-i18n="levelUnit">档</em></div>
+        <div class="right">
+          <div class="pct"><span id="pct">33</span><small>%</small></div>
+          <div class="bar"><div class="fill" id="fill"></div></div>
+        </div>
+      </div>
+
+      <div class="btns">
+        <button data-lv="1" class="active" data-i18n="lvLow">低 档</button>
+        <button data-lv="2" data-i18n="lvMid">中 档</button>
+        <button data-lv="3" data-i18n="lvHigh">高 档</button>
+      </div>
+    </section>
+
+    <aside class="side">
+      <div class="fan-card">
+        <h2 data-i18n="fanTitle">风扇状态</h2>
+        <div class="fan paused" id="fan">
+          <svg viewBox="0 0 200 200" aria-hidden="true">
+            <defs>
+              <linearGradient id="bladeGrad" x1="0" y1="0" x2="0.55" y2="1">
+                <stop offset="0" stop-color="#9fdcff"/>
+                <stop offset="0.5" stop-color="#4cc2ff"/>
+                <stop offset="1" stop-color="#2f6bff"/>
+              </linearGradient>
+              <radialGradient id="fanGlow" cx="0.5" cy="0.5" r="0.5">
+                <stop offset="0" stop-color="#3b78ff" stop-opacity=".30"/>
+                <stop offset="1" stop-color="#3b78ff" stop-opacity="0"/>
+              </radialGradient>
+            </defs>
+
+            <circle cx="100" cy="100" r="96" fill="url(#fanGlow)"/>
+            <circle cx="100" cy="100" r="88" fill="none" stroke="#1e2a3d" stroke-width="3"/>
+            <circle cx="100" cy="100" r="80" fill="#0c1420"/>
+            <circle cx="100" cy="100" r="80" fill="none" stroke="#24314a" stroke-width="1.5"/>
+
+            <g class="blades">
+              <g transform="translate(100 100)">
+                <path transform="rotate(0)"   fill="url(#bladeGrad)" d="M0 -18 C 22 -26 40 -46 34 -66 C 30 -80 12 -80 2 -66 C -8 -52 -6 -32 0 -18 Z"/>
+                <path transform="rotate(72)"  fill="url(#bladeGrad)" d="M0 -18 C 22 -26 40 -46 34 -66 C 30 -80 12 -80 2 -66 C -8 -52 -6 -32 0 -18 Z"/>
+                <path transform="rotate(144)" fill="url(#bladeGrad)" d="M0 -18 C 22 -26 40 -46 34 -66 C 30 -80 12 -80 2 -66 C -8 -52 -6 -32 0 -18 Z"/>
+                <path transform="rotate(216)" fill="url(#bladeGrad)" d="M0 -18 C 22 -26 40 -46 34 -66 C 30 -80 12 -80 2 -66 C -8 -52 -6 -32 0 -18 Z"/>
+                <path transform="rotate(288)" fill="url(#bladeGrad)" d="M0 -18 C 22 -26 40 -46 34 -66 C 30 -80 12 -80 2 -66 C -8 -52 -6 -32 0 -18 Z"/>
+              </g>
+            </g>
+
+            <circle cx="100" cy="100" r="17" fill="#141f31" stroke="#3b6bd4" stroke-width="2"/>
+            <circle cx="100" cy="100" r="7" fill="#8fd0ff"/>
+          </svg>
+        </div>
+        <div class="fw-row">
+          <span class="fw-ver"><span data-i18n="fwLabel">固件</span>&nbsp;<b id="fwVer">--</b></span>
+          <span class="fw-ver fw-latest" id="otaLatest" style="display:none"><span data-i18n="otaLatestLabel">最新</span>&nbsp;<b id="otaLatestVer"></b></span>
+          <button class="fw-btn" id="otaBtn" data-i18n="otaCheck" disabled>检查升级</button>
+        </div>
+      </div>
+      <div class="hint" id="hint"></div>
+    </aside>
+  </main>
+</div>
+
+<!-- ================= 设备选择弹窗 ================= -->
+<div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+  <div class="backdrop" id="backdrop"></div>
+  <div class="sheet">
+    <div class="sheet-head">
+      <div>
+        <h3 id="modalTitle" data-i18n="modalTitle">选择蓝牙设备</h3>
+        <p data-i18n="modalDesc">选一个设备连接。连接过的设备会记住，下次直接点即可。</p>
+      </div>
+      <button class="icon-btn" id="closeBtn" data-i18n-title="close" title="关闭">✕</button>
+    </div>
+
+    <div class="dev-list" id="devList"></div>
+
+    <div class="sheet-foot">     
+      <button class="scan" id="scanBtn" data-i18n="scanNew">扫描新设备</button>
+      <!-- <div class="note" id="modalNote"> -->
+        <!-- 浏览器出于隐私不允许网页自行枚举附近设备，点上方按钮会弹出系统扫描列表（可多选其一）。 -->
+      <!-- </div> -->
+    </div>
+  </div>
+</div>
+
+<!-- ================= WiFi 设置弹窗 ================= -->
+<div class="modal" id="wifiModal" role="dialog" aria-modal="true" aria-labelledby="wifiTitle">
+  <div class="backdrop" id="wifiBackdrop"></div>
+  <div class="sheet">
+    <div class="sheet-head">
+      <div>
+        <h3 id="wifiTitle" data-i18n="wifiTitle">WiFi 设置</h3>
+        <p data-i18n="wifiDesc">设备通过 WiFi 联网检查升级、下载固件。配置保存在设备上，掉电不丢。</p>
+      </div>
+      <button class="icon-btn" id="wifiCloseBtn" data-i18n-title="close" title="关闭">✕</button>
+    </div>
+
+    <div class="wifi-body">
+      <div class="wifi-stat" id="wifiStat">
+        <span class="st-dot"></span>
+        <span class="st-txt" id="wifiStatTxt">—</span>
+      </div>
+
+      <div class="wifi-field">
+        <div class="wifi-label-row">
+          <label data-i18n="wifiPickLabel">选择网络</label>
+          <button class="link-btn" id="wifiManualBtn" type="button" data-i18n="wifiManual">手动输入</button>
+        </div>
+
+        <input id="wifiSsid" type="text" hidden autocomplete="off" autocapitalize="off" autocorrect="off"
+               spellcheck="false" placeholder="MyHome-2.4G" data-i18n-ph="wifiSsidPh" />
+
+        <div class="wifi-list" id="wifiList"></div>
+
+        <button class="wifi-scan-btn" id="wifiScanBtn" type="button" data-i18n="wifiScan">搜索附近 WiFi</button>
+      </div>
+
+      <div class="wifi-field" id="wifiPassField">
+        <label for="wifiPass" data-i18n="wifiPassLabel">密码</label>
+        <div class="pw-wrap">
+          <input id="wifiPass" type="password" autocomplete="new-password" spellcheck="false"
+                 placeholder="••••••••" />
+          <button class="pw-eye" id="pwEye" type="button" data-i18n="pwShow">显示</button>
+        </div>
+      </div>
+
+      <div class="note" data-i18n="wifiNote">搜索由设备完成，只支持 2.4GHz 网络；密码至少 8 位，开放网络可留空。</div>
+    </div>
+
+    <div class="sheet-foot wifi-foot">
+      <button class="scan" id="wifiSaveBtn" data-i18n="wifiSave">保存并连接</button>
+      <button class="btn-danger" id="wifiClearBtn" data-i18n="wifiClear">清除</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<script src="i18n.js"></script>
+<script src="control.js"></script>
+</body>
+</html>
