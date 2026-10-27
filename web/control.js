@@ -18,6 +18,8 @@
   const fanEl = $("fan");
   const fwVer = $("fwVer"), otaBtn = $("otaBtn");
   const otaLatestEl = $("otaLatest"), otaLatestVerEl = $("otaLatestVer");
+  const otaMask = $("otaMask"), otaBarFill = $("otaBarFill"), otaPctTxt = $("otaPctTxt");
+  const otaCardVer = $("otaCardVer"), otaCardNote = $("otaCardNote");
   const wifiBtn = $("wifiBtn"), wifiModal = $("wifiModal");
   const wifiStat = $("wifiStat"), wifiStatTxt = $("wifiStatTxt");
   const wifiSsidEl = $("wifiSsid"), wifiPassEl = $("wifiPass");
@@ -112,6 +114,7 @@
   }
 
   function renderOta() {
+    renderOtaOverlay();
     if (!otaBtn) return;
     const busy = otaPhase === "webcheck" || otaPhase === "progress";
     otaBtn.disabled = !connected || busy;
@@ -121,6 +124,19 @@
       otaBtn.textContent = otaSawEvent ? t("otaProgress").replace("{p}", otaPct) : t("otaWaitDev");
     else if (otaPhase === "ready") otaBtn.textContent = t("otaUpdateTo").replace("{v}", otaRemoteVer);
     else otaBtn.textContent = t("otaCheck");
+  }
+
+  // 升级进度浮层：设备每 2% 推一次，这里同步进度条/百分比
+  function renderOtaOverlay() {
+    if (!otaMask) return;
+    const show = otaPhase === "progress" && connected;
+    otaMask.classList.toggle("show", show);
+    if (!show) return;
+    const p = Math.max(0, Math.min(100, otaPct));
+    if (otaBarFill) otaBarFill.style.width = p + "%";
+    if (otaPctTxt) otaPctTxt.textContent = p + "%";
+    if (otaCardVer) otaCardVer.textContent = otaRemoteVer ? "v" + otaRemoteVer : "";
+    if (otaCardNote) otaCardNote.textContent = otaSawEvent ? t("otaKeepOn") : t("otaWaitDev");
   }
 
   // 网页端版本检查：浏览器直接拉 VERSON.txt
@@ -543,11 +559,14 @@
     setDot(ok ? "on" : "");
     devName.textContent = ok ? (name || t("connected")) : t("notConnected");
     if (!ok) {              // 断开：OTA 状态复位，隐藏"最新版本"显示
+      const wasOta = otaPhase === "progress";
       otaPhase = "idle";
       deviceFw = "";
       stopOtaAck();
       if (otaLatestEl) otaLatestEl.style.display = "none";
       if (fwVer) fwVer.textContent = "--";
+      // 升级过程中断线 = 设备刷完重启了，提示一下（不是故障）
+      if (wasOta) toast(t("otaReboot"));
     }
     render();      // 连接状态变化要同步风扇：未连接时停转
     renderOta();   // 未连接时禁用"检查升级"按钮
@@ -772,29 +791,50 @@
     return txChain;
   }
 
+  // 一条已解析的 JSON 消息
+  function handleMessage(s) {
+    if (typeof s.lv === "number") {
+      state.lv = Math.min(3, Math.max(1, s.lv));
+      state.on = !!s.on;
+      render();
+    }
+    if (typeof s.fw === "string" && fwVer) {
+      fwVer.textContent = s.fw;          // 固件版本
+      deviceFw = s.fw;
+    }
+    if (s.ota) handleOtaEvent(s);                                     // OTA 进度/结果
+    if (s.wifi) onWifiState(s.wifi);                                  // WiFi 状态
+    if (s.ws) onWifiScan(s.ws);                                       // WiFi 搜索结果
+  }
+
   function onNotify(ev) {
     rxBuf += rxDec.decode(ev.target.value, { stream: true });   // 固件会把长 JSON 拆包发
+
+    // 兜底：所有帧都以 '\n' 结尾，缓冲区攒到 400 字节还没有换行，
+    // 说明中间有分片彻底丢了（BLE 在 WiFi/OTA 抢空口时可能丢包）。
+    // 此时必须清掉坏数据，否则后面收到的每条消息都会粘在它后面，永远解析不出来。
+    if (rxBuf.length > 400) {
+      const k = rxBuf.lastIndexOf("\n");
+      rxBuf = k >= 0 ? rxBuf.slice(k + 1) : "";
+    }
+
     let idx;
     while ((idx = rxBuf.indexOf("\n")) >= 0) {
-      const line = rxBuf.slice(0, idx).trim();
+      let line = rxBuf.slice(0, idx).trim();
       rxBuf = rxBuf.slice(idx + 1);
       if (!line) continue;
       log("← " + line, "rx");
+      // 帧同步：丢了开头分片时，一行里会残留 "…gress","p":45} 这种残缺数据，
+      // 只保留最后一个 '{' 之后的部分（顶层 JSON 不含多余 '{'，这样切刚好）。
+      if (line[0] !== "{" || line[line.length - 1] !== "}") {
+        const k = line.lastIndexOf("{");
+        if (k < 0) continue;
+        line = line.slice(k);
+        if (line[line.length - 1] !== "}") continue;   // 尾巴也缺，直接丢帧
+      }
       try {
-        const s = JSON.parse(line);
-        if (typeof s.lv === "number") {
-          state.lv = Math.min(3, Math.max(1, s.lv));
-          state.on = !!s.on;
-          render();
-        }
-        if (typeof s.fw === "string" && fwVer) {
-          fwVer.textContent = s.fw;          // 固件版本
-          deviceFw = s.fw;
-        }
-        if (s.ota) handleOtaEvent(s);                                     // OTA 进度/结果
-        if (s.wifi) onWifiState(s.wifi);                                  // WiFi 状态
-        if (s.ws) onWifiScan(s.ws);                                       // WiFi 搜索结果
-      } catch (e) { /* 非 JSON 通知忽略 */ }
+        handleMessage(JSON.parse(line));
+      } catch (e) { /* 坏帧忽略，等下一帧 */ }
     }
   }
 

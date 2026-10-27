@@ -163,6 +163,22 @@
   </div>
 </div>
 
+<!-- ================= 固件升级进度浮层 ================= -->
+<div class="ota-mask" id="otaMask">
+  <div class="ota-card">
+    <div class="ota-head">
+      <span class="ota-spin"></span>
+      <h3 data-i18n="otaUpdating">正在升级固件</h3>
+    </div>
+    <div class="ota-bar"><i id="otaBarFill"></i></div>
+    <div class="ota-meta">
+      <b id="otaPctTxt">0%</b>
+      <span id="otaCardVer" class="ota-ver"></span>
+    </div>
+    <p class="ota-note" id="otaCardNote" data-i18n="otaKeepOn">请保持蓝牙连接与设备供电，升级完成后设备会自动重启。</p>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 <script src="i18n.js"></script>
 <script src="control.js"></script>
