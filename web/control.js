@@ -93,7 +93,7 @@
   // 流程：点"检查升级" → 浏览器直接拉 GitHub 的 VERSON.txt（比 ESP32 上查快得多）
   //       → 显示最新版本号 → 有新版时按钮变成"升级到 x.x.x" → 再点才发 FLASH 让设备下载
   const OTA_VER_URL =
-    "https://raw.githubusercontent.com/re-spooler/esp32/refs/heads/main/web/OTA/VERSON.tx";
+    "https://raw.githubusercontent.com/re-spooler/esp32-air-purifier/refs/heads/main/web/OTA/VERSON.txt";
 
   let otaPhase = "idle";   // idle | webcheck(网页查版本中) | ready(发现新版等确认) | progress(设备下载中)
   let otaPct = 0;
