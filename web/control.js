@@ -748,6 +748,8 @@
       log(t("connectedLog") + nm);
       send("S");
       armFwRetry();
+      // 把网页当前语言同步给屏（设备存 NVS，开机屏也用这个语言）
+      send("LANG:" + (window.I18N.lang === "en" ? "EN" : "ZH"));
     } catch (e) {
       log(t("connectFailed") + (e.message || e), "er");
       toast(t("connectFailed") + (e.message || e));
@@ -835,6 +837,9 @@
     if (s.ota) handleOtaEvent(s);                                     // OTA 进度/结果
     if (s.wifi) onWifiState(s.wifi);                                  // WiFi 状态
     if (s.ws) onWifiScan(s.ws);                                       // WiFi 搜索结果
+    if ((s.lang === "en" || s.lang === "zh") && window.I18N.lang !== s.lang) {
+      window.I18N.set(s.lang);  // 屏自己切了语言 → 网页跟着切（I18N.set 会存 localStorage）
+    }
   }
 
   function onNotify(ev) {
@@ -952,6 +957,8 @@
 
   /* 切换语言时重渲染所有动态文字 */
   document.addEventListener("langchange", () => {
+    // 已连接就把新语言同步给屏（设备存 NVS，开机屏自动用上次的语言）
+    if (connected) send("LANG:" + (window.I18N.lang === "en" ? "EN" : "ZH"));
     initHint();
     setConnected(connected, curName);
     render();
